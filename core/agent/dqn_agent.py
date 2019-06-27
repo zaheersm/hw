@@ -458,17 +458,17 @@ class LaplaceHeadAgent(Agent):
         plt.savefig(os.path.join(heatmap_dir, 'heatmap_{}.png'.format(self.eval_number)))
         plt.close()
 
-        fig, ax = plt.subplots(nrows=self.config.d, ncols=1, figsize=(6, 6 * self.config.d))
-        for d in range(self.config.d):
-            values = np.zeros((15, 15))
-            for k, s in enumerate(states):
-                v = f_s[k][d].item()
-                x, y = s
-                values[x][y] = v
-            sns.heatmap(values, ax=ax[d])
-            ax[g_k].set_title('d: {}'.format(d))
-        plt.savefig(os.path.join(heatmap_dir, 'components_{}.png'.format(self.eval_number)))
-        plt.close()
+        # fig, ax = plt.subplots(nrows=self.config.d, ncols=1, figsize=(6, 6 * self.config.d))
+        # for d in range(self.config.d):
+        #     values = np.zeros((15, 15))
+        #     for k, s in enumerate(states):
+        #         v = f_s[k][d].item()
+        #         x, y = s
+        #         values[x][y] = v
+        #     sns.heatmap(values, ax=ax[d])
+        #     ax[g_k].set_title('d: {}'.format(d))
+        # plt.savefig(os.path.join(heatmap_dir, 'components_{}.png'.format(self.eval_number)))
+        # plt.close()
 
     def save(self):
         dir = self.config.get_eigvecdir()
