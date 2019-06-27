@@ -1,0 +1,7 @@
+__pycache__/
+.DS_Store
+.idea/
+*data/*
+experiment/scripts
+experiment/config_files
+experiment/plots
