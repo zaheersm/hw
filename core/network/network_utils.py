@@ -21,6 +21,7 @@ class BaseNet:
 #     return layer
 
 def layer_init(layer, w_scale=1.0):
+    # nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
     nn.init.xavier_uniform_(layer.weight)
     nn.init.constant_(layer.bias.data, 0)
     return layer

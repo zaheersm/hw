@@ -32,6 +32,15 @@ class Replay:
 
         return batch_data
 
+    def sample_array(self, batch_size=None):
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        sampled_indices = [np.random.randint(0, len(self.data)) for _ in range(batch_size)]
+        sampled_data = [self.data[ind] for ind in sampled_indices]
+
+        return sampled_data
+
     def size(self):
         return len(self.data)
 

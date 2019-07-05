@@ -68,6 +68,34 @@ def run_laplace_steps(agent):
         agent.step()
 
 
+def run_steps_representation(agent):
+    config = agent.config
+    agent_name = agent.__class__.__name__
+    t0 = time.time()
+    total_episodes = 0
+    while True:
+        if config.save_interval and not agent.total_steps % config.save_interval:
+            agent.save(os.path.join(config.get_modeldir(), 'model-%s-%s-%s.bin' % (agent_name, config.task_name, config.tag)))
+        if config.log_interval and not agent.total_steps % config.log_interval and len(agent.episode_rewards):
+            rewards = agent.episode_rewards
+            agent.episode_rewards = []
+            total_episodes += len(rewards)
+            config.tensorboard.add_scalar('/dqn/reward/average_reward', np.mean(rewards), agent.total_steps)
+            config.tensorboard.add_scalar('/dqn/reward/median_reward', np.median(rewards), agent.total_steps)
+            config.tensorboard.add_scalar('/dqn/reward/min_reward', np.min(rewards), agent.total_steps)
+            config.tensorboard.add_scalar('/dqn/reward/max_reward', np.max(rewards), agent.total_steps)
+            config.logger.info('total steps %d, total episodes %3d, returns %.2f/%.2f/%.2f/%.2f/%d (mean/median/min/max/num), %.2f steps/s' % (
+                agent.total_steps, total_episodes, np.mean(rewards), np.median(rewards), np.min(rewards), np.max(rewards), len(rewards),
+                config.log_interval / (time.time() - t0)))
+            t0 = time.time()
+        if config.eval_interval and not agent.total_steps % config.eval_interval:
+            agent.eval_episodes()
+            t0 = time.time()
+        if config.max_steps and agent.total_steps >= config.max_steps:
+            break
+        agent.step()
+
+
 def run_steps_plan(agent):
     config = agent.config
     agent_name = agent.__class__.__name__

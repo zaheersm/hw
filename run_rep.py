@@ -7,33 +7,41 @@ from experiment.sweeper import Sweeper
 
 
 def set_optimizer_fn(cfg):
-    if cfg.optimizer_type == 'SGD':
-        cfg.optimizer_fn = lambda params: torch.optim.SGD(params, cfg.learning_rate)
-    elif cfg.optimizer_type == 'RMSProp' and cfg.network_type == 'conv':
-        cfg.optimizer_fn = lambda params: torch.optim.RMSprop(params, lr=cfg.learning_rate,
-                                                              alpha=0.95, centered=True, eps=0.01)
-    elif cfg.optimizer_type == 'RMSProp':
-        cfg.optimizer_fn = lambda params: torch.optim.RMSprop(params, cfg.learning_rate)
+    if cfg.q_opt_type == 'SGD':
+        cfg.q_opt_fn = lambda params: torch.optim.SGD(params, cfg.q_lr)
+    elif cfg.q_opt_type == 'RMSProp':
+        cfg.q_opt_fn = lambda params: torch.optim.RMSprop(params, cfg.q_lr)
+    else:
+        raise NotImplementedError
+
+    if cfg.l_opt_type == 'SGD':
+        cfg.l_opt_fn = lambda params: torch.optim.SGD(params, cfg.l_lr)
+    elif cfg.l_opt_type == 'RMSProp':
+        cfg.l_opt_fn = lambda params: torch.optim.RMSprop(params, cfg.l_lr)
+    elif cfg.l_opt_type == 'Adam':
+        cfg.l_opt_fn = lambda params: torch.optim.Adam(params, cfg.l_lr)
     else:
         raise NotImplementedError
 
 
-def set_network_fn(cfg):
-    if cfg.modulation and cfg.network_type == 'flat' and cfg.laplace_representation:
-        cfg.network_fn = lambda: ModulatedNet(cfg.action_dim, FCBody(np.prod(cfg.state_dim),
-                                              hidden_units=tuple(cfg.hidden_units)), cfg.device)
-    elif cfg.network_type == 'conv':
-        cfg.network_fn = lambda: KennyNet(in_channels=cfg.state_dim[-1], spatial_length=cfg.state_dim[0],
-                                          num_actions=cfg.action_dim, device=cfg.device)
-    elif cfg.network_type == 'flat' and cfg.laplace_representation:
-        cfg.network_fn = lambda: VanillaNet(cfg.action_dim, FCBody(np.prod(cfg.d),
+def set_qnet_fn(cfg):
+    if cfg.q_net_type == 'flat' and cfg.laplace_representation:
+        cfg.q_net_fn = lambda: VanillaNet(cfg.action_dim, FCBody(np.prod(cfg.d),
                                             hidden_units=tuple(cfg.hidden_units)), cfg.device)
-    elif cfg.network_type == 'flat' and not cfg.laplace_representation:
-        cfg.network_fn = lambda: VanillaNet(cfg.action_dim, FCBody(np.prod(cfg.state_dim),
-                                            hidden_units=tuple(cfg.hidden_units)), cfg.device)
-    elif cfg.network_type == 'linear' and cfg.laplace_representation:
-        cfg.network_fn = lambda: LinearNet(cfg.action_dim, cfg.d, cfg.device)
+    elif cfg.q_net_type == 'linear' and cfg.laplace_representation:
+        cfg.q_net_fn = lambda: LinearNet(cfg.action_dim, cfg.d, cfg.device)
 
+    else:
+        raise NotImplementedError
+
+
+def set_vector_fn(cfg):
+    if cfg.vector_type == 'flat' and cfg.multi_head:
+        cfg.vector_fn = lambda: VanillaNet(cfg.d, FCBody(np.prod(cfg.state_dim),
+                                           hidden_units=tuple(cfg.vec_hidden_units)), cfg.device)
+    elif cfg.vector_type == 'flat' and not cfg.multi_head:
+        cfg.vector_fn = lambda: VanillaNet(1, FCBody(np.prod(cfg.state_dim),
+                                           hidden_units=tuple(cfg.vec_hidden_units)), cfg.device)
     else:
         raise NotImplementedError
 
@@ -56,16 +64,6 @@ def set_task_fn(cfg):
     else:
         raise NotImplementedError
 
-
-def set_vector_fn(cfg):
-    if cfg.vector_type == 'flat' and cfg.multi_head:
-        cfg.vector_fn = lambda: VanillaNet(cfg.d, FCBody(np.prod(cfg.state_dim),
-                                           hidden_units=tuple(cfg.vec_hidden_units)), cfg.device)
-    elif cfg.vector_type == 'flat' and not cfg.multi_head:
-        cfg.vector_fn = lambda: VanillaNet(1, FCBody(np.prod(cfg.state_dim),
-                                           hidden_units=tuple(cfg.vec_hidden_units)), cfg.device)
-    else:
-        raise NotImplementedError
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="run_file")
@@ -92,11 +90,11 @@ if __name__ == '__main__':
     # Setting up the optimizer
     set_optimizer_fn(cfg)
 
-    if cfg.replay:
-        cfg.replay_fn = lambda: Replay(memory_size=int(cfg.memory_size), batch_size=cfg.batch_size)
-        # cfg.replay_fn = lambda: TensorReplay(memory_size=int(cfg.memory_size), batch_size=cfg.batch_size, device=cfg.device)
+    cfg.q_replay_fn = lambda: Replay(memory_size=int(cfg.q_memory_size), batch_size=cfg.q_batch_size)
+    cfg.l_replay_fn = lambda: Replay(memory_size=int(cfg.l_memory_size), batch_size=cfg.l_batch_size)
 
-    set_network_fn(cfg)
+    set_qnet_fn(cfg)
+    set_vector_fn(cfg)
 
     cfg.random_action_prob = LinearSchedule(cfg.epsilon_start, cfg.epsilon_end, cfg.epsilon_schedule_steps)
 
@@ -111,10 +109,6 @@ if __name__ == '__main__':
 
     # Initializing the agent and running the experiment
     agent_class = getattr(agent, cfg.agent)
-    if cfg.laplace_representation: set_vector_fn(cfg)
     agent = agent_class(cfg)
-    if cfg.laplace_representation: agent.load(os.path.join(cfg.data_root, cfg.load_path))
-
-    if cfg.modulation: agent.load_prototypes()
-
+    if cfg.load_representation: agent.load(os.path.join(cfg.data_root, cfg.load_path))
     run_steps(agent)

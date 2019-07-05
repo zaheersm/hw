@@ -62,9 +62,17 @@ class OneRoom:
         self.min_x, self.max_x, self.min_y, self.max_y = 0, 14, 0, 14
         self.goal_x, self.goal_y = 14, 14
 
+    # def reset(self):
+    #     self.current_state = 0, 0
+    #     return np.array(self.current_state)
+
     def reset(self):
-        self.current_state = 0, 0
-        return np.array(self.current_state)
+        while True:
+            rand_state = np.random.randint(low=0, high=15, size=2)
+            rx, ry = rand_state
+            if not int(self.obstacles_map[rx][ry]):
+                self.current_state = rand_state[0], rand_state[1]
+                return np.array(self.current_state)
 
     def step(self, a):
         dx, dy = self.actions[a[0]]
@@ -82,6 +90,17 @@ class OneRoom:
             return np.array([x, y]), np.asarray(1.0), np.asarray(True), ""
         else:
             return np.array([x, y]), np.asarray(0.0), np.asarray(False), ""
+
+    def get_eval_states(self):
+        states = []
+        for x in range(15):
+            for y in range(15):
+                if not int(self.obstacles_map[x][y]):
+                    states.append([x, y])
+        return np.array(states)
+
+    def get_eval_goal_states(self):
+        return np.array([[14, 14], [0, 0], [14, 0], [0, 14]])
 
 
 class TwoRooms:
@@ -123,6 +142,17 @@ class TwoRooms:
             return np.array([x, y]), np.asarray(1.0), np.asarray(True), ""
         else:
             return np.array([x, y]), np.asarray(0.0), np.asarray(False), ""
+
+    def get_eval_states(self):
+        states = []
+        for x in range(15):
+            for y in range(15):
+                if not int(self.obstacles_map[x][y]):
+                    states.append([x, y])
+        return np.array(states)
+
+    def get_eval_goal_states(self):
+        return np.array([[6, 0], [6, 14], [8, 0], [8, 14]])
 
 
 class HardMaze:
@@ -185,6 +215,43 @@ class HardMaze:
             return np.array([x, y]), np.asarray(1.0), np.asarray(True), ""
         else:
             return np.array([x, y]), np.asarray(0.0), np.asarray(False), ""
+
+    def get_prototypes(self):
+        protos = [
+            [3, 8],
+            [10, 3],
+            [4, 14],
+            [7, 14],
+            [9, 9],
+            [14, 3],
+            [7, 0],
+            [0, 0],
+            [0, 14],
+            [3, 3],
+            [14, 0],
+            [14, 14]
+        ]
+        # [3, 3],
+        # [12, 3],
+        # [10, 9],
+        # [3, 14],
+        # [6, 14],
+        # [0, 0],
+        # [14, 0],
+        # [6, 14],
+        # [14, 3],
+        return np.array(protos)
+
+    def get_eval_states(self):
+        states = []
+        for x in range(15):
+            for y in range(15):
+                if not int(self.obstacles_map[x][y]):
+                    states.append([x, y])
+        return np.array(states)
+
+    def get_eval_goal_states(self):
+        return np.array([[9, 9], [0, 0], [14, 0], [7, 14]])
 
 
 class OneRoomLaplace:
