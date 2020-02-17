@@ -269,36 +269,81 @@ class LaplaceExcursionRepresentationAgent(Agent):
         self.repulsive_loss = []
 
         self.eval_number = 0
-        self.random_excursion_prob = 0.1
+        self.random_excursion_prob = 1.0
         self.random_excursion = False
+
+        self.state_visitation = np.zeros([15, 15])
+        self.rnd_target = config.rnd_fn()
+        self.rnd_predictior = config.rnd_fn()
+        self.rnd_opt = config.rnd_opt_fn(self.rnd_predictior.parameters())
+        self.action_count = np.zeros([self.config.action_dim])
+
+    def q_policy(self, phi_s):
+        q_values = self.q_net(phi_s)
+        q_values = to_np(q_values).flatten()
+        if np.random.rand() < self.config.random_action_prob() or self.random_excursion:
+            action = np.random.randint(0, len(q_values))
+        else:
+            action = np.argmax(q_values)
+        return action
+
+    def rnd_policy(self, s):
+        stacked_s = torch.tensor(s).unsqueeze(0).repeat(self.config.action_dim, 1).float()
+        actions = torch.arange(self.config.action_dim).unsqueeze(1)
+
+        actions_onehot = torch.FloatTensor(self.config.action_dim, self.config.action_dim)
+        actions_onehot.zero_()
+        actions_onehot.scatter_(1, actions, 1)
+
+        input_rnd = torch.cat([stacked_s, actions_onehot], dim=1)
+        with torch.no_grad():
+            target = self.rnd_target(input_rnd)
+        predictions = self.rnd_predictior(input_rnd)
+
+        mse = (target-predictions).pow(2)
+        loss = mse.mul(0.5).mean()
+        self.rnd_opt.zero_grad()
+        loss.backward()
+        self.rnd_opt.step()
+
+        action = torch.argmax(torch.sum(mse, 1), 0)
+        # print(action, torch.sum(mse, 1))
+        self.action_count[action]+=1
+        return action
 
     def step(self):
         config = self.config
-
         if self.reset is True:
             self.state = self.task.reset()
             self.reset = False
             if np.random.rand() < self.random_excursion_prob or self.num_episodes < 10:
                 self.random_excursion = True
 
+        x, y = self.state
+        if self.random_excursion: self.state_visitation[int(x)][int(y)] += 1
+
         s = config.state_normalizer(self.state)
         if self.random_excursion: self.trajectory.append(s)
+        phi_s = self.get_fs(tensor(s, self.config.device).unsqueeze(0))
+        # action = self.rnd_policy(s) if self.random_excursion else self.q_policy(phi_s)
 
-        phi_s = self.get_fs(tensor(s, config.device).unsqueeze(0))
-        q_values = self.q_net(phi_s)
-        q_values = to_np(q_values).flatten()
-        if np.random.rand() < config.random_action_prob() or self.random_excursion:
-            action = np.random.randint(0, len(q_values))
-        else:
-            action = np.argmax(q_values)
+        action = np.random.randint(0, 4)
+        # phi_s = self.get_fs(tensor(s, config.device).unsqueeze(0))
+        # q_values = self.q_net(phi_s)
+        # q_values = to_np(q_values).flatten()
+        # if np.random.rand() < config.random_action_prob() or self.random_excursion:
+        #     action = np.random.randint(0, len(q_values))
+        # else:
+        #     action = np.argmax(q_values)
+
         next_state, reward, done, info = self.task.step([action])
 
         ns = config.state_normalizer(next_state)
         phi_ns = self.get_fs(tensor(ns, config.device).unsqueeze(0))
         entry = [phi_s, action, reward, phi_ns, int(done), info]
         self.state = next_state
-
         state, action, reward, next_state, done, _ = entry
+        self.q_replay.feed_batch([[state, action, reward, next_state, done]])
 
         self.episode_reward += reward
         self.total_steps += 1
@@ -315,8 +360,11 @@ class LaplaceExcursionRepresentationAgent(Agent):
                 self.trajectory = []
                 self.random_excursion = False
             self.num_episodes += 1
-            self.train_representation()
-        self.q_replay.feed_batch([[state, action, reward, next_state, done]])
+
+        # if self.num_episodes > 10 and np.random.rand() < 0.2:
+        #         self.train_representation()
+
+
 
         experiences = self.q_replay.sample()
         states, actions, rewards, next_states, terminals = experiences
@@ -362,34 +410,54 @@ class LaplaceExcursionRepresentationAgent(Agent):
         super(LaplaceExcursionRepresentationAgent, self).eval_episodes()
         # This function is called eval_episodes for legacy reasons
         heatmap_dir = self.config.get_heatmapdir()
-        states = self.task.get_eval_states()
-        goals = self.task.get_eval_goal_states()
-
-        states_ = tensor(self.config.state_normalizer(states), self.config.device)
-        goals_ = tensor(self.config.state_normalizer(goals), self.config.device)
-
-        with torch.no_grad():
-            out = self.vectors(torch.cat([states_, goals_]))
-        f_s = out[:len(states_)]
-        f_g = out[len(states_):]
-
-        f_s = f_s.unsqueeze(2)
-        f_g = f_g.unsqueeze(2)
-
-        fig, ax = plt.subplots(nrows=len(goals), ncols=1, figsize=(6, 6 * 4))
-        for g_k in range(len(goals)):
-            g = f_g[g_k]
-            l2_vec = (f_s - g)**2
-            l2_vec = torch.sum(l2_vec.squeeze(2), 1)
-            distance = np.zeros((15, 15))
-            for k, s in enumerate(states):
-                x, y = s
-                distance[x][y] = l2_vec[k].item()
-            sns.heatmap(distance, ax=ax[g_k])
-            ax[g_k].set_title('Goal: {}, {}'.format(goals[g_k][0], goals[g_k][1]))
+        # states = self.task.get_eval_states()
+        # goals = self.task.get_eval_goal_states()
+        #
+        # states_ = tensor(self.config.state_normalizer(states), self.config.device)
+        # goals_ = tensor(self.config.state_normalizer(goals), self.config.device)
+        #
+        # with torch.no_grad():
+        #     out = self.vectors(torch.cat([states_, goals_]))
+        # f_s = out[:len(states_)]
+        # f_g = out[len(states_):]
+        #
+        # f_s = f_s.unsqueeze(2)
+        # f_g = f_g.unsqueeze(2)
+        #
+        # fig, ax = plt.subplots(nrows=len(goals), ncols=1, figsize=(6, 6 * 4))
+        # for g_k in range(len(goals)):
+        #     g = f_g[g_k]
+        #     l2_vec = (f_s - g)**2
+        #     l2_vec = torch.sum(l2_vec.squeeze(2), 1)
+        #     distance = np.zeros((15, 15))
+        #     for k, s in enumerate(states):
+        #         x, y = s
+        #         distance[x][y] = l2_vec[k].item()
+        #     sns.heatmap(distance, ax=ax[g_k])
+        #     ax[g_k].set_title('Goal: {}, {}'.format(goals[g_k][0], goals[g_k][1]))
+        # plt.savefig(os.path.join(heatmap_dir, 'heatmap_{}.png'.format(self.eval_number)))
+        # plt.close()
+        #
+        # fig, ax = plt.subplots(nrows=self.config.d, ncols=1, figsize=(6, 6 * self.config.d))
+        # for d in range(self.config.d):
+        #     values = np.zeros((15, 15))
+        #     for k, s in enumerate(states):
+        #         v = f_s[k][d].item()
+        #         x, y = s
+        #         values[x][y] = v
+        #     sns.heatmap(values, ax=ax[d])
+        #     ax[g_k].set_title('d: {}'.format(d))
+        # plt.savefig(os.path.join(heatmap_dir, 'components_{}.png'.format(self.eval_number)))
+        # plt.close()
+        #
+        if self.eval_number > 1:
+            plt.plot()
+            self.state_visitation /= np.sum(self.state_visitation)
+            sns.heatmap(self.state_visitation, vmax=0.01)
+            plt.savefig(os.path.join(heatmap_dir, 'state_visitation_{}.png'.format(self.eval_number)))
+            plt.close()
         self.eval_number +=1
-        plt.savefig(os.path.join(heatmap_dir, 'heatmap_{}.png'.format(self.eval_number)))
-        plt.close()
+        print(self.action_count)
 
     def train_representation(self):
         bs, d, to, dev, = self.config.l_batch_size, self.config.d, self.config.timeout, self.config.device

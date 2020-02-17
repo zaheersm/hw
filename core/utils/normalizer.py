@@ -53,3 +53,70 @@ class RescaleNormalizerv2(BaseNormalizer):
 
     def __call__(self, x):
         return 2*self.coef*x - 1
+
+
+class StdDevNormalizer(BaseNormalizer):
+    def __init__(self):
+        BaseNormalizer.__init__(self)
+        self.running_stats = RunningStats()
+
+    def __call__(self, x):
+        self.running_stats.push(x)
+        x = np.asarray(x)
+        div = self.running_stats.standard_deviation()
+        return np.true_divide(x, self.running_stats.standard_deviation(), out=np.zeros_like(x), where=div != 0, casting='unsafe')
+
+
+class MeanStdDevNormalizer(BaseNormalizer):
+    def __init__(self, read_only=False, state_dim=2):
+        BaseNormalizer.__init__(self, read_only)
+        self.state_dim = state_dim
+
+        self.running_stats = []
+        for k in range(state_dim):
+            self.running_stats.append(RunningStats())
+
+    def __call__(self, x):
+        means, std_dev = [], []
+        for k in range(self.state_dim):
+            self.running_stats[k].push(x[k])
+            means.append(self.running_stats[k].mean())
+            std_dev.append(self.running_stats[k].standard_deviation())
+        x = np.asarray(x)
+        means = np.array(means)
+        std_dev = np.array(std_dev)
+        return np.true_divide(x - means, std_dev, out=np.zeros_like(x), where=std_dev != 0, casting='unsafe')
+
+
+class RunningStats:
+    def __init__(self):
+        self.n = 0
+        self.old_m = 0
+        self.new_m = 0
+        self.old_s = 0
+        self.new_s = 0
+
+    def clear(self):
+        self.n = 0
+
+    def push(self, x):
+        self.n += 1
+
+        if self.n == 1:
+            self.old_m = self.new_m = x
+            self.old_s = 0
+        else:
+            self.new_m = self.old_m + (x - self.old_m) / self.n
+            self.new_s = self.old_s + (x - self.old_m) * (x - self.new_m)
+
+            self.old_m = self.new_m
+            self.old_s = self.new_s
+
+    def mean(self):
+        return self.new_m if self.n else 0.0
+
+    def variance(self):
+        return self.new_s / (self.n - 1) if self.n > 1 else 0.0
+
+    def standard_deviation(self):
+        return np.sqrt(self.variance())
